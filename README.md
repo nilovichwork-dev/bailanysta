@@ -1,36 +1,63 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Bailanysta
 
-## Getting Started
+Простое приложение-соцсеть: можно публиковать посты и видеть их в общей ленте.
 
-First, run the development server:
+## Описание проекта
 
-```bash
+Тестовое задание — минимальная соцсеть с созданием постов, лентой и переходом между страницами (лента / профиль). Проект сделан на Next.js: фронтенд и бэкенд находятся в одном приложении.
+
+## Стек технологий
+
+- **Next.js** (App Router) — фреймворк, объединяющий фронтенд и бэкенд в одном проекте
+- **React** — для интерактивности интерфейса (форма, лента постов)
+- **Tailwind CSS** — для быстрой стилизации без написания отдельных CSS-файлов
+- **TypeScript** — не использовался, проект написан на обычном JavaScript/JSX ради простоты (это был мой первый опыт в разработке)
+
+## Как это устроено
+
+- `app/page.tsx` — главная страница: форма создания поста + лента постов
+- `app/profile/page.tsx` — страница профиля
+- `app/api/posts/route.ts` — собственный API (бэкенд): `GET` отдаёт список постов, `POST` добавляет новый пост
+
+Посты хранятся в памяти сервера (без базы данных) — это осознанный компромисс ради экономии времени (см. ниже).
+
+## Установка и запуск локально
+
+\`\`\`bash
+git clone <ссылка на репозиторий>
+cd bailanysta
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+\`\`\`
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Открыть в браузере: https://github.com/nilovichwork/bailanysta.git,
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Процесс разработки
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Так как я до этого не программировал(а), разработка шла пошагово:
+1. Создание проекта Next.js
+2. Вёрстка формы создания поста и ленты постов
+3. Добавление интерактивности через React (useState)
+4. Создание собственного API-роута для хранения постов на сервере
+5. Подключение фронтенда к API через fetch
+6. Добавление второй страницы (профиль) и роутинга между страницами
+7. Деплой на Vercel
 
-## Learn More
+## Выбор стека и компромиссы
 
-To learn more about Next.js, take a look at the following resources:
+- **Next.js** выбран, чтобы не разворачивать отдельный бэкенд-сервер — фронтенд и API живут в одном проекте, это быстрее для срока в 1-2 дня
+- **Хранение постов в памяти (без базы данных)** — осознанный компромисс: посты пропадают при перезапуске сервера, но зато не нужно настраивать и подключать внешнюю БД, что сэкономило значительное время
+- **Без TypeScript** — упростило вход в разработку, так как я делал(а) это в первый раз
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Известные баги / ограничения
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- Посты не сохраняются между перезапусками сервера (только в памяти)
+- Нет валидации длины текста поста
+- Нет аутентификации — все посты публикуются от имени "Ты"
 
-## Deploy on Vercel
+## Возможные улучшения (бонусный уровень)
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Тёмная/светлая тема
+- Лайки и комментарии
+- Подписки и уведомления
+- Поиск по постам
