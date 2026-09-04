@@ -1,18 +1,9 @@
+import { sql } from "@vercel/postgres";
 import { NextResponse } from "next/server";
 
-type Post = {
-  id: number;
-  author: string;
-  text: string;
-  likes: number;
-};
-
-let posts: Post[] = [
-  { id: 1, author: "Автор поста", text: "Текст примера поста", likes: 0 },
-];
-
 export async function GET() {
-  return NextResponse.json(posts);
+  const { rows } = await sql`SELECT * FROM posts ORDER BY id DESC`;
+  return NextResponse.json(rows);
 }
 
 export async function POST(request: Request) {
@@ -25,25 +16,31 @@ export async function POST(request: Request) {
     );
   }
 
-  const newPost: Post = {
-    id: Date.now(),
-    author: "Ты",
-    text: body.text,
-    likes: 0,
-  };
+  const id = Date.now();
+  const author = "Ты";
 
-  posts = [newPost, ...posts];
-  return NextResponse.json(newPost, { status: 201 });
+  const { rows } = await sql`
+    INSERT INTO posts (id, author, text, likes)
+    VALUES (${id}, ${author}, ${body.text}, 0)
+    RETURNING *
+  `;
+
+  return NextResponse.json(rows[0], { status: 201 });
 }
 
 export async function PATCH(request: Request) {
   const body = await request.json();
-  const post = posts.find((p) => p.id === body.id);
 
-  if (!post) {
+  const { rows } = await sql`
+    UPDATE posts
+    SET likes = likes + 1
+    WHERE id = ${body.id}
+    RETURNING *
+  `;
+
+  if (rows.length === 0) {
     return NextResponse.json({ error: "Пост не найден" }, { status: 404 });
   }
 
-  post.likes += 1;
-  return NextResponse.json(post);
+  return NextResponse.json(rows[0]);
 }
