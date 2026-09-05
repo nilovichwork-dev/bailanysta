@@ -10,6 +10,7 @@ type Post = {
   text: string;
   likes: number;
   comment_count: number;
+  liked_by_me: boolean;
 };
 
 type Comment = {
@@ -99,7 +100,7 @@ export default function Home() {
     });
 
     const newPost = await res.json();
-    setPosts([newPost, ...posts]);
+    setPosts([{ ...newPost, comment_count: 0, liked_by_me: false }, ...posts]);
     setText("");
   }
 
@@ -136,9 +137,18 @@ export default function Home() {
     const updatedPost = await res.json();
     setPosts(
       posts.map((p) =>
-        p.id === id ? { ...updatedPost, comment_count: p.comment_count } : p
+        p.id === id
+          ? { ...updatedPost, comment_count: p.comment_count, liked_by_me: !p.liked_by_me }
+          : p
       )
     );
+  }
+
+  async function handleDelete(id: number) {
+    if (!confirm("Удалить этот пост?")) return;
+
+    await fetch(`/api/posts?id=${id}`, { method: "DELETE" });
+    setPosts(posts.filter((p) => p.id !== id));
   }
 
   function startEdit(post: Post) {
@@ -158,7 +168,9 @@ export default function Home() {
     const updatedPost = await res.json();
     setPosts(
       posts.map((p) =>
-        p.id === id ? { ...updatedPost, comment_count: p.comment_count } : p
+        p.id === id
+          ? { ...updatedPost, comment_count: p.comment_count, liked_by_me: p.liked_by_me }
+          : p
       )
     );
     setEditingId(null);
@@ -378,7 +390,7 @@ export default function Home() {
                     onClick={() => handleLike(post.id)}
                     className="text-sm flex items-center gap-1"
                   >
-                    ❤️ {post.likes}
+                    {post.liked_by_me ? "❤️" : "🤍"} {post.likes}
                   </button>
                   <button
                     onClick={() => toggleComments(post.id)}
@@ -387,12 +399,20 @@ export default function Home() {
                     💬 {post.comment_count} {openComments === post.id ? "(Скрыть)" : ""}
                   </button>
                   {post.author === currentUser && (
-                    <button
-                      onClick={() => startEdit(post)}
-                      className="text-sm text-blue-500 underline"
-                    >
-                      Редактировать
-                    </button>
+                    <>
+                      <button
+                        onClick={() => startEdit(post)}
+                        className="text-sm text-blue-500 underline"
+                      >
+                        Редактировать
+                      </button>
+                      <button
+                        onClick={() => handleDelete(post.id)}
+                        className="text-sm text-red-500 underline"
+                      >
+                        Удалить
+                      </button>
+                    </>
                   )}
                 </div>
 
