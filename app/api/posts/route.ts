@@ -7,14 +7,16 @@ export async function GET() {
   const currentUser = cookieStore.get("username")?.value || "";
 
   const { rows } = await sql`
-    SELECT posts.*, COUNT(comments.id)::int AS comment_count,
+    SELECT posts.*, users.avatar_url,
+      COUNT(comments.id)::int AS comment_count,
       EXISTS(
         SELECT 1 FROM post_likes
         WHERE post_likes.post_id = posts.id AND post_likes.username = ${currentUser}
       ) AS liked_by_me
     FROM posts
     LEFT JOIN comments ON comments.post_id = posts.id
-    GROUP BY posts.id
+    LEFT JOIN users ON users.username = posts.author
+    GROUP BY posts.id, users.avatar_url
     ORDER BY posts.id DESC
   `;
   return NextResponse.json(rows);
@@ -38,10 +40,11 @@ export async function POST(request: Request) {
   }
 
   const id = Date.now();
+  const imageUrl = body.imageUrl || null;
 
   const { rows } = await sql`
-    INSERT INTO posts (id, author, text, likes)
-    VALUES (${id}, ${author}, ${body.text}, 0)
+    INSERT INTO posts (id, author, text, likes, image_url)
+    VALUES (${id}, ${author}, ${body.text}, 0, ${imageUrl})
     RETURNING *
   `;
 
@@ -65,14 +68,12 @@ export async function PATCH(request: Request) {
   let rows;
 
   if (already.rows.length > 0) {
-    // Пользователь уже лайкал — убираем лайк
     await sql`DELETE FROM post_likes WHERE post_id = ${body.id} AND username = ${liker}`;
     const result = await sql`
       UPDATE posts SET likes = likes - 1 WHERE id = ${body.id} RETURNING *
     `;
     rows = result.rows;
   } else {
-    // Ставим лайк
     await sql`INSERT INTO post_likes (post_id, username) VALUES (${body.id}, ${liker})`;
     const result = await sql`
       UPDATE posts SET likes = likes + 1 WHERE id = ${body.id} RETURNING *

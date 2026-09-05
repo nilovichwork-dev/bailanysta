@@ -47,3 +47,25 @@ export async function POST(request: Request) {
 
   return NextResponse.json(rows[0], { status: 201 });
 }
+
+export async function DELETE(request: Request) {
+  const cookieStore = await cookies();
+  const currentUser = cookieStore.get("username")?.value;
+
+  const { searchParams } = new URL(request.url);
+  const id = searchParams.get("id");
+
+  const { rows } = await sql`
+    DELETE FROM comments WHERE id = ${id} AND author = ${currentUser}
+    RETURNING *
+  `;
+
+  if (rows.length === 0) {
+    return NextResponse.json(
+      { error: "Комментарий не найден или у вас нет прав на его удаление" },
+      { status: 404 }
+    );
+  }
+
+  return NextResponse.json({ success: true });
+}

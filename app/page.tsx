@@ -11,6 +11,8 @@ type Post = {
   likes: number;
   comment_count: number;
   liked_by_me: boolean;
+  image_url: string | null;
+  avatar_url: string | null;
 };
 
 type Comment = {
@@ -18,6 +20,7 @@ type Comment = {
   post_id: number;
   author: string;
   text: string;
+  avatar_url: string | null;
 };
 
 type Notification = {
@@ -26,9 +29,56 @@ type Notification = {
   is_read: boolean;
 };
 
+const AVATAR_COLORS = [
+  "bg-rose-500",
+  "bg-orange-500",
+  "bg-amber-500",
+  "bg-teal-500",
+  "bg-sky-500",
+  "bg-indigo-500",
+  "bg-fuchsia-500",
+];
+
+function avatarColor(name: string) {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+}
+
+function Avatar({
+  name,
+  avatarUrl,
+  size = "w-9 h-9 text-sm",
+}: {
+  name: string;
+  avatarUrl?: string | null;
+  size?: string;
+}) {
+  if (avatarUrl) {
+    return (
+      <img
+        src={avatarUrl}
+        alt={name}
+        className={`${size} rounded-full object-cover shrink-0`}
+      />
+    );
+  }
+
+  return (
+    <div
+      className={`${size} rounded-full ${avatarColor(name)} flex items-center justify-center text-white font-semibold shrink-0`}
+    >
+      {name.charAt(0).toUpperCase()}
+    </div>
+  );
+}
+
 export default function Home() {
   const router = useRouter();
   const [currentUser, setCurrentUser] = useState<string | null>(null);
+  const [currentAvatarUrl, setCurrentAvatarUrl] = useState<string | null>(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [posts, setPosts] = useState<Post[]>([]);
   const [text, setText] = useState("");
@@ -44,6 +94,9 @@ export default function Home() {
   const [openComments, setOpenComments] = useState<number | null>(null);
   const [comments, setComments] = useState<Record<number, Comment[]>>({});
   const [commentText, setCommentText] = useState("");
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -53,6 +106,7 @@ export default function Home() {
           router.push("/login");
         } else {
           setCurrentUser(data.username);
+          setCurrentAvatarUrl(data.avatarUrl);
         }
         setCheckingAuth(false);
       });
@@ -90,18 +144,51 @@ export default function Home() {
     router.push("/login");
   }
 
+  function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) {
+      setSelectedImage(file);
+      setImagePreview(URL.createObjectURL(file));
+    }
+  }
+
+  function removeImage() {
+    setSelectedImage(null);
+    setImagePreview(null);
+  }
+
   async function handlePublish() {
     if (!text.trim()) return;
+
+    let imageUrl = null;
+
+    if (selectedImage) {
+      setUploading(true);
+      const formData = new FormData();
+      formData.append("file", selectedImage);
+
+      const uploadRes = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+      const uploadData = await uploadRes.json();
+      imageUrl = uploadData.url;
+      setUploading(false);
+    }
 
     const res = await fetch("/api/posts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, imageUrl }),
     });
 
     const newPost = await res.json();
-    setPosts([{ ...newPost, comment_count: 0, liked_by_me: false }, ...posts]);
+    setPosts([
+      { ...newPost, comment_count: 0, liked_by_me: false, avatar_url: currentAvatarUrl },
+      ...posts,
+    ]);
     setText("");
+    removeImage();
   }
 
   async function handleGenerate() {
@@ -138,7 +225,12 @@ export default function Home() {
     setPosts(
       posts.map((p) =>
         p.id === id
-          ? { ...updatedPost, comment_count: p.comment_count, liked_by_me: !p.liked_by_me }
+          ? {
+              ...updatedPost,
+              comment_count: p.comment_count,
+              liked_by_me: !p.liked_by_me,
+              avatar_url: p.avatar_url,
+            }
           : p
       )
     );
@@ -169,7 +261,12 @@ export default function Home() {
     setPosts(
       posts.map((p) =>
         p.id === id
-          ? { ...updatedPost, comment_count: p.comment_count, liked_by_me: p.liked_by_me }
+          ? {
+              ...updatedPost,
+              comment_count: p.comment_count,
+              liked_by_me: p.liked_by_me,
+              avatar_url: p.avatar_url,
+            }
           : p
       )
     );
@@ -231,7 +328,10 @@ export default function Home() {
     const newComment = await res.json();
     setComments({
       ...comments,
-      [post.id]: [...(comments[post.id] || []), newComment],
+      [post.id]: [
+        ...(comments[post.id] || []),
+        { ...newComment, avatar_url: currentAvatarUrl },
+      ],
     });
     setPosts(
       posts.map((p) =>
@@ -239,6 +339,19 @@ export default function Home() {
       )
     );
     setCommentText("");
+  }
+
+  async function handleDeleteComment(postId: number, commentId: number) {
+    await fetch(`/api/comments?id=${commentId}`, { method: "DELETE" });
+    setComments({
+      ...comments,
+      [postId]: (comments[postId] || []).filter((c) => c.id !== commentId),
+    });
+    setPosts(
+      posts.map((p) =>
+        p.id === postId ? { ...p, comment_count: p.comment_count - 1 } : p
+      )
+    );
   }
 
   if (checkingAuth) {
@@ -252,200 +365,284 @@ export default function Home() {
   );
 
   return (
-    <main className="max-w-xl mx-auto py-10 px-4 dark:bg-gray-900 dark:text-white min-h-screen">
-      <div className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-bold">Bailanysta</h1>
+    <div className="min-h-screen bg-[#F3EEFC] dark:bg-[#150F26] dark:text-white">
+      <div className="max-w-xl mx-auto px-4">
+        <header className="sticky top-0 z-20 -mx-4 px-4 py-3 mb-6 backdrop-blur-md bg-[#F3EEFC]/80 dark:bg-[#150F26]/80 border-b border-black/5 dark:border-white/10 flex items-center justify-between">
+          <h1 className="text-xl font-extrabold tracking-tight bg-gradient-to-r from-[#FF5DA2] to-[#FFB238] bg-clip-text text-transparent">
+            Bailanysta
+          </h1>
 
-        <div className="relative">
-          <button
-            onClick={openNotifications}
-            className="border rounded px-3 py-1 text-sm dark:border-gray-600"
-          >
-            🔔 {unreadCount > 0 && `(${unreadCount})`}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setDarkMode(!darkMode)}
+              className="w-10 h-10 rounded-full border border-black/10 dark:border-white/15 flex items-center justify-center hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+              title={darkMode ? "Светлая тема" : "Тёмная тема"}
+            >
+              {darkMode ? "☀️" : "🌙"}
+            </button>
 
-          {showNotifications && (
-            <div className="absolute right-0 mt-2 w-64 border rounded-lg bg-white dark:bg-gray-800 dark:border-gray-600 shadow-lg p-3 z-10">
-              {notifications.length === 0 && (
-                <p className="text-sm text-gray-500">Нет уведомлений</p>
+            <div className="relative">
+              <button
+                onClick={openNotifications}
+                className="relative w-10 h-10 rounded-full border border-black/10 dark:border-white/15 flex items-center justify-center hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+              >
+                🔔
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-gradient-to-r from-[#FF5DA2] to-[#FFB238] text-white text-[10px] flex items-center justify-center font-bold">
+                    {unreadCount}
+                  </span>
+                )}
+              </button>
+
+              {showNotifications && (
+                <div className="absolute right-0 mt-2 w-72 rounded-2xl border border-black/5 dark:border-white/10 bg-[#FCFAFF] dark:bg-[#1E1834] shadow-lg p-3 z-10">
+                  {notifications.length === 0 && (
+                    <p className="text-sm text-gray-500 dark:text-gray-400 px-1 py-2">
+                      Нет уведомлений
+                    </p>
+                  )}
+                  {notifications.map((n) => (
+                    <p
+                      key={n.id}
+                      className="text-sm mb-1.5 last:mb-0 text-gray-900 dark:text-white px-1"
+                    >
+                      {n.message}
+                    </p>
+                  ))}
+                </div>
               )}
-              {notifications.map((n) => (
-                <p key={n.id} className="text-sm mb-2">
-                  {n.message}
-                </p>
-              ))}
+            </div>
+          </div>
+        </header>
+
+        <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center gap-3">
+            <Avatar name={currentUser || "?"} avatarUrl={currentAvatarUrl} />
+            <div>
+              <p className="font-semibold text-sm leading-tight text-gray-900 dark:text-white">
+                {currentUser}
+              </p>
+              <Link
+                href="/profile"
+                className="text-xs text-[#FF5DA2] hover:underline"
+              >
+                Профиль
+              </Link>
+            </div>
+          </div>
+          <button
+            onClick={handleLogout}
+            className="text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
+          >
+            Выйти
+          </button>
+        </div>
+
+        <div className="rounded-2xl border border-black/5 dark:border-white/10 bg-[#FCFAFF] dark:bg-[#1E1834] p-4 mb-6">
+          <textarea
+            className="w-full resize-none bg-transparent outline-none placeholder:text-gray-400 dark:placeholder:text-gray-500 mb-3 text-[15px] text-gray-900 dark:text-white"
+            placeholder="Что нового? (или тема для AI)"
+            rows={3}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+          />
+
+          {imagePreview && (
+            <div className="relative mb-3 inline-block">
+              <img src={imagePreview} alt="preview" className="max-h-40 rounded-xl" />
+              <button
+                onClick={removeImage}
+                className="absolute top-1.5 right-1.5 bg-black/70 text-white rounded-full w-6 h-6 text-xs flex items-center justify-center"
+              >
+                ✕
+              </button>
             </div>
           )}
+
+          <div className="flex gap-2 items-center flex-wrap">
+            <button
+              className="rounded-full px-5 py-2 text-sm font-semibold text-white bg-gradient-to-r from-[#FF5DA2] to-[#FFB238] hover:opacity-90 transition-opacity disabled:opacity-50"
+              onClick={handlePublish}
+              disabled={uploading}
+            >
+              {uploading ? "Загрузка..." : "Опубликовать"}
+            </button>
+            <button
+              className="rounded-full px-4 py-2 text-sm font-medium border border-black/10 dark:border-white/15 hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-50 text-gray-900 dark:text-white"
+              onClick={handleGenerate}
+              disabled={generating}
+            >
+              {generating ? "Генерирую..." : "✨ AI"}
+            </button>
+            <label className="rounded-full px-4 py-2 text-sm font-medium border border-black/10 dark:border-white/15 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-gray-900 dark:text-white">
+              📷 Фото
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleImageSelect}
+                className="hidden"
+              />
+            </label>
+          </div>
         </div>
-      </div>
 
-      <div className="flex justify-between items-center mb-4 text-sm">
-        <span>
-          Привет, <b>{currentUser}</b>!
-        </span>
-        <button onClick={handleLogout} className="text-blue-500 underline">
-          Выйти
-        </button>
-      </div>
-
-      <button
-        onClick={() => setDarkMode(!darkMode)}
-        className="mb-4 border rounded px-3 py-1 text-sm dark:border-gray-600"
-      >
-        {darkMode ? "☀️ Светлая тема" : "🌙 Тёмная тема"}
-      </button>
-
-      <Link href="/profile" className="text-blue-500 underline block mb-4">
-        Профиль →
-      </Link>
-
-      <div className="border rounded-lg p-4 mb-6 dark:border-gray-600">
-        <textarea
-          className="w-full border rounded p-2 mb-2 dark:bg-gray-800 dark:border-gray-600"
-          placeholder="Что нового? (или тема для AI)"
-          rows={3}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
+        <input
+          type="text"
+          placeholder="Поиск по постам..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="w-full rounded-full border border-black/10 dark:border-white/15 bg-[#FCFAFF] dark:bg-[#1E1834] px-4 py-2.5 mb-5 outline-none placeholder:text-gray-400 dark:placeholder:text-gray-500 text-sm text-gray-900 dark:text-white"
         />
-        <div className="flex gap-2">
-          <button
-            className="bg-black text-white px-4 py-2 rounded dark:bg-white dark:text-black"
-            onClick={handlePublish}
-          >
-            Опубликовать
-          </button>
-          <button
-            className="border px-4 py-2 rounded dark:border-gray-600"
-            onClick={handleGenerate}
-            disabled={generating}
-          >
-            {generating ? "Генерирую..." : "✨ Сгенерировать AI"}
-          </button>
-        </div>
-      </div>
 
-      <input
-        type="text"
-        placeholder="Поиск по постам..."
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        className="w-full border rounded p-2 mb-4 dark:bg-gray-800 dark:border-gray-600"
-      />
-
-      <div className="space-y-4">
-        {loading && (
-          <>
-            {[1, 2, 3].map((i) => (
-              <div
-                key={i}
-                className="border rounded-lg p-4 dark:border-gray-600 animate-pulse"
-              >
-                <div className="h-4 bg-gray-300 dark:bg-gray-700 rounded w-1/4 mb-3"></div>
-                <div className="h-4 bg-gray-300 dark:bg-gray-700 rounded w-3/4 mb-2"></div>
-                <div className="h-4 bg-gray-300 dark:bg-gray-700 rounded w-1/3"></div>
-              </div>
-            ))}
-          </>
-        )}
-        {filteredPosts.map((post) => (
-          <div key={post.id} className="border rounded-lg p-4 dark:border-gray-600">
-            <div className="flex justify-between items-center">
-              <p className="font-semibold">{post.author}</p>
-              {post.author !== currentUser && (
-                <button
-                  onClick={() => toggleFollow(post.author)}
-                  className="text-xs border rounded px-2 py-1 dark:border-gray-600"
+        <div className="space-y-4 pb-16">
+          {loading && (
+            <>
+              {[1, 2, 3].map((i) => (
+                <div
+                  key={i}
+                  className="rounded-2xl border border-black/5 dark:border-white/10 bg-[#FCFAFF] dark:bg-[#1E1834] p-4 animate-pulse"
                 >
-                  {following.includes(post.author) ? "Отписаться" : "Подписаться"}
-                </button>
+                  <div className="h-4 bg-black/10 dark:bg-white/10 rounded w-1/4 mb-3"></div>
+                  <div className="h-4 bg-black/10 dark:bg-white/10 rounded w-3/4 mb-2"></div>
+                  <div className="h-4 bg-black/10 dark:bg-white/10 rounded w-1/3"></div>
+                </div>
+              ))}
+            </>
+          )}
+          {filteredPosts.map((post) => (
+            <div
+              key={post.id}
+              className="rounded-2xl border border-black/5 dark:border-white/10 bg-[#FCFAFF] dark:bg-[#1E1834] p-4"
+            >
+              <div className="flex items-center gap-3 mb-3">
+                <Avatar name={post.author} avatarUrl={post.avatar_url} />
+                <p className="font-semibold text-sm text-gray-900 dark:text-white">
+                  {post.author}
+                </p>
+                {post.author !== currentUser && (
+                  <button
+                    onClick={() => toggleFollow(post.author)}
+                    className="ml-auto text-xs font-medium rounded-full border border-black/10 dark:border-white/15 px-3 py-1 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-gray-900 dark:text-white"
+                  >
+                    {following.includes(post.author) ? "Отписаться" : "Подписаться"}
+                  </button>
+                )}
+              </div>
+
+              {editingId === post.id ? (
+                <div className="mt-2">
+                  <textarea
+                    className="w-full border border-black/10 dark:border-white/15 rounded-xl p-2 mb-2 bg-transparent text-[15px] text-gray-900 dark:text-white"
+                    value={editText}
+                    onChange={(e) => setEditText(e.target.value)}
+                    rows={2}
+                  />
+                  <button
+                    onClick={() => saveEdit(post.id)}
+                    className="rounded-full bg-gradient-to-r from-[#FF5DA2] to-[#FFB238] text-white px-4 py-1.5 text-sm font-semibold mr-2"
+                  >
+                    Сохранить
+                  </button>
+                  <button
+                    onClick={() => setEditingId(null)}
+                    className="rounded-full border border-black/10 dark:border-white/15 px-4 py-1.5 text-sm text-gray-900 dark:text-white"
+                  >
+                    Отмена
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <p className="mb-3 text-[15px] leading-relaxed text-gray-900 dark:text-white">
+                    {post.text}
+                  </p>
+                  {post.image_url && (
+                    <img
+                      src={post.image_url}
+                      alt="post"
+                      className="max-h-96 rounded-xl mb-3 w-full object-cover"
+                    />
+                  )}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      onClick={() => handleLike(post.id)}
+                      className={
+                        post.liked_by_me
+                          ? "rounded-full px-3 py-1.5 text-sm font-medium text-white bg-gradient-to-r from-[#FF5DA2] to-[#FFB238] flex items-center gap-1"
+                          : "rounded-full px-3 py-1.5 text-sm font-medium border border-black/10 dark:border-white/15 flex items-center gap-1 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-gray-900 dark:text-white"
+                      }
+                    >
+                      ❤ {post.likes}
+                    </button>
+                    <button
+                      onClick={() => toggleComments(post.id)}
+                      className="rounded-full px-3 py-1.5 text-sm font-medium border border-black/10 dark:border-white/15 flex items-center gap-1 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-gray-900 dark:text-white"
+                    >
+                      💬 {post.comment_count}
+                    </button>
+                    {post.author === currentUser && (
+                      <>
+                        <button
+                          onClick={() => startEdit(post)}
+                          className="text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-[#7C5CFC] transition-colors ml-1"
+                        >
+                          Редактировать
+                        </button>
+                        <button
+                          onClick={() => handleDelete(post.id)}
+                          className="text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-rose-500 transition-colors"
+                        >
+                          Удалить
+                        </button>
+                      </>
+                    )}
+                  </div>
+
+                  {openComments === post.id && (
+                    <div className="mt-4 border-t border-black/5 dark:border-white/10 pt-4">
+                      {(comments[post.id] || []).map((c) => (
+                        <div key={c.id} className="flex items-start gap-2 mb-3">
+                          <Avatar
+                            name={c.author}
+                            avatarUrl={c.avatar_url}
+                            size="w-6 h-6 text-[10px]"
+                          />
+                          <div className="flex-1 text-sm text-gray-900 dark:text-white">
+                            <span className="font-semibold">{c.author}: </span>
+                            {c.text}
+                          </div>
+                          {c.author === currentUser && (
+                            <button
+                              onClick={() => handleDeleteComment(post.id, c.id)}
+                              className="text-gray-400 hover:text-rose-500 text-xs shrink-0"
+                            >
+                              Удалить
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                      <div className="flex gap-2 mt-2">
+                        <input
+                          type="text"
+                          placeholder="Написать комментарий..."
+                          value={commentText}
+                          onChange={(e) => setCommentText(e.target.value)}
+                          className="flex-1 rounded-full border border-black/10 dark:border-white/15 bg-transparent px-3 py-1.5 text-sm outline-none text-gray-900 dark:text-white"
+                        />
+                        <button
+                          onClick={() => handleAddComment(post)}
+                          className="rounded-full bg-gradient-to-r from-[#FF5DA2] to-[#FFB238] text-white px-4 py-1.5 text-sm font-semibold"
+                        >
+                          Отправить
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </div>
-
-            {editingId === post.id ? (
-              <div className="mt-2">
-                <textarea
-                  className="w-full border rounded p-2 mb-2 dark:bg-gray-800 dark:border-gray-600"
-                  value={editText}
-                  onChange={(e) => setEditText(e.target.value)}
-                  rows={2}
-                />
-                <button
-                  onClick={() => saveEdit(post.id)}
-                  className="bg-black text-white px-3 py-1 rounded text-sm mr-2 dark:bg-white dark:text-black"
-                >
-                  Сохранить
-                </button>
-                <button
-                  onClick={() => setEditingId(null)}
-                  className="border px-3 py-1 rounded text-sm dark:border-gray-600"
-                >
-                  Отмена
-                </button>
-              </div>
-            ) : (
-              <>
-                <p className="mb-2">{post.text}</p>
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={() => handleLike(post.id)}
-                    className="text-sm flex items-center gap-1"
-                  >
-                    {post.liked_by_me ? "❤️" : "🤍"} {post.likes}
-                  </button>
-                  <button
-                    onClick={() => toggleComments(post.id)}
-                    className="text-sm flex items-center gap-1"
-                  >
-                    💬 {post.comment_count} {openComments === post.id ? "(Скрыть)" : ""}
-                  </button>
-                  {post.author === currentUser && (
-                    <>
-                      <button
-                        onClick={() => startEdit(post)}
-                        className="text-sm text-blue-500 underline"
-                      >
-                        Редактировать
-                      </button>
-                      <button
-                        onClick={() => handleDelete(post.id)}
-                        className="text-sm text-red-500 underline"
-                      >
-                        Удалить
-                      </button>
-                    </>
-                  )}
-                </div>
-
-                {openComments === post.id && (
-                  <div className="mt-3 border-t pt-3 dark:border-gray-600">
-                    {(comments[post.id] || []).map((c) => (
-                      <div key={c.id} className="mb-2 text-sm">
-                        <span className="font-semibold">{c.author}: </span>
-                        {c.text}
-                      </div>
-                    ))}
-                    <div className="flex gap-2 mt-2">
-                      <input
-                        type="text"
-                        placeholder="Написать комментарий..."
-                        value={commentText}
-                        onChange={(e) => setCommentText(e.target.value)}
-                        className="flex-1 border rounded p-1 text-sm dark:bg-gray-800 dark:border-gray-600"
-                      />
-                      <button
-                        onClick={() => handleAddComment(post)}
-                        className="bg-black text-white px-3 py-1 rounded text-sm dark:bg-white dark:text-black"
-                      >
-                        Отправить
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
-    </main>
+    </div>
   );
 }
